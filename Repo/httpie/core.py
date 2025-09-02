@@ -51,8 +51,8 @@ def main(args: List[Union[str, bytes]] = sys.argv, env=Environment()) -> ExitSta
 
     try:
         parsed_args = parser.parse_args(
+            env,
             args=args,
-            env=env,
         )
         parsed_args.follow = False
         parsed_args.check_status = True
@@ -127,13 +127,13 @@ def program(args: argparse.Namespace, env: Environment) -> ExitStatus:
     The main program without error handling.
     """
     exit_status = ExitStatus.SUCCESS
-    
+
     # Handle downloads
     if getattr(args, 'download', False):
         downloader = Downloader(args=args, env=env)
         exit_status = downloader.start()
         return exit_status
-    
+
     # Collect messages
     try:
         responses = list(collect_messages(
@@ -144,7 +144,7 @@ def program(args: argparse.Namespace, env: Environment) -> ExitStatus:
         # If collect_messages fails, return error
         env.log_error(f'Request failed: {e}')
         return ExitStatus.ERROR
-    
+
     # Handle the response
     if getattr(args, 'output_file', None):
         # Save to file
@@ -164,7 +164,7 @@ def program(args: argparse.Namespace, env: Environment) -> ExitStatus:
                 with_body=with_body,
                 with_headers=with_headers,
             )
-    
+
     # Check status if needed
     if getattr(args, 'check_status', False) and responses:
         for response in responses:
@@ -172,7 +172,7 @@ def program(args: argparse.Namespace, env: Environment) -> ExitStatus:
                 exit_status = http_status_to_exit_status(response.status_code)
                 if exit_status != ExitStatus.SUCCESS:
                     break
-    
+
     return exit_status
 
 
