@@ -64,7 +64,7 @@ class HTTPieHTTPSAdapter(HTTPAdapter):
             context = create_urllib3_context(
                 ciphers=ciphers or DEFAULT_SSL_CIPHERS,
             )
-
+        
         # Set the verification mode
         if verify:
             context.check_hostname = True
@@ -72,5 +72,5 @@ class HTTPieHTTPSAdapter(HTTPAdapter):
         else:
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
-
+        
         return context

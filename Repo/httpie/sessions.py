@@ -35,14 +35,14 @@ def get_httpie_session(
 ) -> 'Session':
     # Get the hostname from the URL
     hostname = host or urlsplit(url).netloc.split(':')[0]
-
+    
     # Create the session directory if it doesn't exist
     session_dir = config_dir / SESSIONS_DIR_NAME / hostname
     session_dir.mkdir(parents=True, exist_ok=True)
-
+    
     # Create the session file path
     path = session_dir / f'{session_name}.json'
-
+    
     session = Session(path)
     session.load()
     return session
@@ -64,7 +64,7 @@ class Session(BaseConfigDict):
         certain name prefixes.
         """
         for name, value in request_headers.items():
-            if not any(name.lower().startswith(prefix.lower())
+            if not any(name.lower().startswith(prefix.lower()) 
                       for prefix in SESSION_IGNORED_HEADER_PREFIXES):
                 self['headers'][name] = value
 
@@ -102,19 +102,19 @@ class Session(BaseConfigDict):
         auth = self.get('auth', {})
         if not auth or auth.get('type') is None:
             return None
-
+        
         # Get the auth plugin
         auth_plugin = plugin_manager.get_auth_plugin(auth.get('type'))
         if not auth_plugin:
             return None
-
+        
         # Get the credentials
         raw_auth = auth.get('raw_auth', '')
         if ':' in raw_auth:
             username, password = raw_auth.split(':', 1)
         else:
             username, password = raw_auth, ''
-
+        
         return auth_plugin.get_auth(username, password)
 
     @auth.setter

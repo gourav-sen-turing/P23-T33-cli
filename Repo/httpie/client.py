@@ -79,7 +79,7 @@ def collect_messages(
 
     request = requests.Request(**request_kwargs)
     prepared_request = requests_session.prepare_request(request)
-
+    
     # Apply missing repeated headers
     apply_missing_repeated_headers(
         prepared_request=prepared_request,

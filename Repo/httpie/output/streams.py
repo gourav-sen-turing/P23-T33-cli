@@ -159,13 +159,11 @@ class PrettyStream(EncodedStream):
             line = self.process_body(line)
             yield smart_encode(line, self.output_encoding) + lf
 
-    def process_body(self, chunk: Union[str, bytes]) -> bytes:
-        if isinstance(chunk, str):
-            chunk = chunk.encode('utf-8', errors='replace')
+    def process_body(self, chunk: Union[str, bytes]) -> str:
+        if isinstance(chunk, bytes):
+            chunk = chunk.decode('utf-8', errors='replace')
         if self.formatting:
             chunk = self.formatting.format_body(chunk, self.mime)
-        if self.conversion:
-            chunk = self.conversion.convert(chunk)
         return chunk
 
 
@@ -180,7 +178,7 @@ class BufferedPrettyStream(PrettyStream):
     CHUNK_SIZE = 1
 
     def iter_body(self) -> Iterable[bytes]:
-        body = b''.join(self.msg.body)
+        body = b''.join(self.msg.iter_body(self.CHUNK_SIZE))
         if b'\0' in body:
             raise BinarySuppressedError()
         body = smart_decode(body, self.encoding)

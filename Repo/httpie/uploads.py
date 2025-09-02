@@ -111,11 +111,11 @@ def get_multipart_data_and_content_type(
         fields=data.items(),
         boundary=boundary,
     )
-
+    
     # Get the content type
     if content_type is None:
         content_type = encoder.content_type
-
+    
     return encoder, content_type
 
 
