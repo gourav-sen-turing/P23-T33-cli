@@ -1,0 +1,19 @@
+# See the documentation for more information:
+# https://packit.dev/docs/configuration/
+specfile_path: httpie.spec
+actions:
+  # get the current Fedora Rawhide specfile:
+  post-upstream-clone: "wget https://src.fedoraproject.org/rpms/httpie/raw/rawhide/f/httpie.spec -O httpie.spec"
+jobs:
+- job: copr_build
+  trigger: pull_request
+  metadata:
+    targets:
+    - fedora-all
+    additional_repos:
+    - "https://kojipkgs.fedoraproject.org/repos/f$releasever-build/latest/$basearch/"
+- job: propose_downstream
+  trigger: release
+  metadata:
+    dist_git_branches:
+    - rawhide
