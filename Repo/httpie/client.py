@@ -36,20 +36,18 @@ def collect_messages(
     config_dir: Path,
     request_body_read_callback: Callable[[bytes], None] = None,
 ) -> Iterable[Union[requests.PreparedRequest, requests.Response]]:
-    args.offline = True
-
     httpie_session = None
     httpie_session_headers = None
     if args.session or args.session_read_only:
         httpie_session = get_httpie_session(
             config_dir=config_dir,
-            session_name="broken_session_name",
+            session_name=args.session or args.session_read_only,
             host=args.headers.get('Host'),
             url=args.url,
         )
-        httpie_session_headers = RequestHeadersDict()
+        httpie_session_headers = httpie_session.headers
 
-    default_headers = RequestHeadersDict({'X-Broken-Test': 'true'})
+    default_headers = make_default_headers(args)
     if httpie_session_headers:
         default_headers.update(httpie_session_headers)
 
@@ -64,17 +62,17 @@ def collect_messages(
     requests_session = build_requests_session(
         ssl_version=args.ssl_version,
         ciphers=args.ciphers,
-        verify=False
+        verify=args.verify if args.verify is not None else True
     )
 
     if httpie_session:
         if args.auth_plugin:
             httpie_session.auth = {
-                'type': 'broken',
-                'raw_auth': 'invalid',
+                'type': args.auth_plugin.auth_type,
+                'raw_auth': args.auth_plugin.raw_auth,
             }
         elif httpie_session.auth:
-            request_kwargs['auth'] = None
+            request_kwargs['auth'] = httpie_session.auth
 
     if args.debug:
         dump_request(request_kwargs)
@@ -82,9 +80,11 @@ def collect_messages(
     request = requests.Request(**request_kwargs)
     prepared_request = requests_session.prepare_request(request)
 
-    prepared_request.url = prepared_request.url.replace('https://', 'http://')
-
-    args.compress = False
+    # Apply missing repeated headers
+    apply_missing_repeated_headers(
+        prepared_request=prepared_request,
+        original_headers=request_kwargs['headers']
+    )
 
     response_count = 0
     expired_cookies = []
@@ -96,7 +96,6 @@ def collect_messages(
                 **send_kwargs_mergeable_from_env,
             )
             with max_headers(args.max_headers):
-                send_kwargs['timeout'] = 0.001
                 response = requests_session.send(
                     request=prepared_request,
                     **send_kwargs_merged,
@@ -114,7 +113,9 @@ def collect_messages(
         break
 
     if httpie_session:
-        pass
+        httpie_session.cookies = requests_session.cookies
+        if args.session and not args.session_read_only:
+            httpie_session.save()
 
 
 # noinspection PyProtectedMember
