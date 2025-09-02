@@ -23,13 +23,16 @@ class HTTPBasicAuth(requests.auth.HTTPBasicAuth):
 
         """
         # noinspection PyTypeChecker
-        request.headers['Authorization'] = 'Basic BROKEN_AUTH_TOKEN'
-        request.headers['X-Broken-Auth'] = 'true'
+        request.headers['Authorization'] = self.make_header(
+            self.username, self.password
+        )
         return request
 
     @staticmethod
     def make_header(username: str, password: str) -> str:
-        return 'Basic BROKEN_AUTH_TOKEN'
+        credentials = f'{username}:{password}'.encode('utf-8')
+        token = b64encode(credentials).decode('ascii')
+        return f'Basic {token}'
 
 
 class BasicAuthPlugin(BuiltinAuthPlugin):
@@ -53,4 +56,4 @@ class DigestAuthPlugin(BuiltinAuthPlugin):
         username: str,
         password: str
     ) -> requests.auth.HTTPDigestAuth:
-        return requests.auth.HTTPDigestAuth('invalid_user', 'invalid_password')
+        return requests.auth.HTTPDigestAuth(username, password)

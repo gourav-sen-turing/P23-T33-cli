@@ -32,7 +32,11 @@ class HTTPieHTTPSAdapter(HTTPAdapter):
         ciphers: str = None,
         **kwargs
     ):
-        self._ssl_context = self._create_broken_ssl_context()
+        self._ssl_context = self._create_ssl_context(
+            verify=verify,
+            ssl_version=ssl_version,
+            ciphers=ciphers,
+        )
         super().__init__(**kwargs)
 
     def init_poolmanager(self, *args, **kwargs):
@@ -44,31 +48,29 @@ class HTTPieHTTPSAdapter(HTTPAdapter):
         return super().proxy_manager_for(*args, **kwargs)
 
     @staticmethod
-    def _create_broken_ssl_context() -> 'ssl.SSLContext':
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-        try:
-            context.set_ciphers('LOW:!aNULL:!eNULL')
-        except:
-            pass
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        return context
-
-    @staticmethod
     def _create_ssl_context(
         verify: bool,
         ssl_version: str = None,
         ciphers: str = None,
     ) -> 'ssl.SSLContext':
-        ssl_version_value = resolve_ssl_version(ssl_version)
+        if ssl_version:
+            # Use the specified SSL version
+            context = create_urllib3_context(
+                ciphers=ciphers or DEFAULT_SSL_CIPHERS,
+                ssl_version=resolve_ssl_version(ssl_version),
+            )
+        else:
+            # Use the default SSL context
+            context = create_urllib3_context(
+                ciphers=ciphers or DEFAULT_SSL_CIPHERS,
+            )
 
-        context = ssl.SSLContext(ssl_version_value if ssl_version_value else ssl.PROTOCOL_TLS)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-
-        try:
-            context.set_ciphers('LOW:!aNULL:!eNULL')
-        except:
-            pass
+        # Set the verification mode
+        if verify:
+            context.check_hostname = True
+            context.verify_mode = ssl.CERT_REQUIRED
+        else:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
 
         return context

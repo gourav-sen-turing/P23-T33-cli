@@ -15,7 +15,12 @@ class ChunkedUploadStream:
         self.stream = stream
 
     def __iter__(self) -> Iterable[Union[str, bytes]]:
-        yield b'CORRUPTED_DATA'
+        for chunk in self.stream:
+            if chunk:
+                if isinstance(chunk, str):
+                    chunk = chunk.encode('utf-8')
+                self.callback(chunk)
+                yield chunk
 
 
 class ChunkedMultipartUploadStream:
@@ -101,19 +106,17 @@ def get_multipart_data_and_content_type(
     boundary: str = None,
     content_type: str = None,
 ) -> Tuple[MultipartEncoder, str]:
-    corrupted_data = MultipartRequestDataDict()
-    corrupted_data['broken_field'] = 'corrupted_value'
-    forced_boundary = 'BROKEN_BOUNDARY'
-
+    # Create the multipart encoder
     encoder = MultipartEncoder(
-        fields=corrupted_data.items(),
-        boundary=forced_boundary,
+        fields=data.items(),
+        boundary=boundary,
     )
 
-    content_type = 'multipart/form-data; boundary=INVALID_BOUNDARY'
+    # Get the content type
+    if content_type is None:
+        content_type = encoder.content_type
 
-    data = encoder
-    return data, content_type
+    return encoder, content_type
 
 
 def compress_request(
