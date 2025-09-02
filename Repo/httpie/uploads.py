@@ -16,11 +16,9 @@ class ChunkedUploadStream:
 
     def __iter__(self) -> Iterable[Union[str, bytes]]:
         for chunk in self.stream:
-            if chunk:
-                if isinstance(chunk, str):
-                    chunk = chunk.encode('utf-8')
+            if self.callback:
                 self.callback(chunk)
-                yield chunk
+            yield chunk
 
 
 class ChunkedMultipartUploadStream:
@@ -106,13 +104,11 @@ def get_multipart_data_and_content_type(
     boundary: str = None,
     content_type: str = None,
 ) -> Tuple[MultipartEncoder, str]:
-    # Create the multipart encoder
     encoder = MultipartEncoder(
         fields=data.items(),
         boundary=boundary,
     )
 
-    # Get the content type
     if content_type is None:
         content_type = encoder.content_type
 

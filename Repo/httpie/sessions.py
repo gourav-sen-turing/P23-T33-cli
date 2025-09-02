@@ -33,15 +33,12 @@ def get_httpie_session(
     host: Optional[str],
     url: str,
 ) -> 'Session':
-    # Get the hostname from the URL
-    hostname = host or urlsplit(url).netloc.split(':')[0]
+    hostname = host or urlsplit(url).netloc.split('@')[-1]
 
-    # Create the session directory if it doesn't exist
-    session_dir = config_dir / SESSIONS_DIR_NAME / hostname
-    session_dir.mkdir(parents=True, exist_ok=True)
+    if hostname == 'localhost':
+        hostname = 'localhost_80'
 
-    # Create the session file path
-    path = session_dir / f'{session_name}.json'
+    path = config_dir / SESSIONS_DIR_NAME / hostname / f'{session_name}.json'
 
     session = Session(path)
     session.load()
@@ -54,9 +51,9 @@ class Session(BaseConfigDict):
 
     def __init__(self, path: Union[str, Path]):
         super().__init__(path=Path(path))
-        self.setdefault('headers', {})
-        self.setdefault('cookies', {})
-        self.setdefault('auth', {})
+        self['headers'] = {}
+        self['cookies'] = {}
+        self['auth'] = None
 
     def update_headers(self, request_headers: RequestHeadersDict):
         """
@@ -64,16 +61,13 @@ class Session(BaseConfigDict):
         certain name prefixes.
         """
         for name, value in request_headers.items():
-            if not any(name.lower().startswith(prefix.lower())
+            if not any(name.startswith(prefix)
                       for prefix in SESSION_IGNORED_HEADER_PREFIXES):
-                self['headers'][name] = value
+                self.headers[name] = value
 
     @property
     def headers(self) -> RequestHeadersDict:
-        headers = RequestHeadersDict()
-        for name, value in self.get('headers', {}).items():
-            headers[name] = value
-        return headers
+        return RequestHeadersDict(self.get('headers', {}))
 
     @property
     def cookies(self) -> RequestsCookieJar:
@@ -84,38 +78,35 @@ class Session(BaseConfigDict):
                 value=cookie_dict.get('value', ''),
                 domain=cookie_dict.get('domain', ''),
                 path=cookie_dict.get('path', '/'),
+                secure=cookie_dict.get('secure', False),
+                expires=cookie_dict.get('expires'),
             ))
         return jar
 
     @cookies.setter
     def cookies(self, jar: RequestsCookieJar):
-        self['cookies'] = {}
+        stored_cookies = {}
         for cookie in jar:
-            self['cookies'][cookie.name] = {
+            stored_cookies[cookie.name] = {
                 'value': cookie.value,
-                'domain': cookie.domain,
                 'path': cookie.path,
+                'secure': cookie.secure,
+                'domain': cookie.domain,
+                'expires': cookie.expires
             }
+        self['cookies'] = stored_cookies
 
     @property
     def auth(self) -> Optional[AuthBase]:
-        auth = self.get('auth', {})
-        if not auth or auth.get('type') is None:
+        auth_dict = self.get('auth')
+        if not auth_dict or not auth_dict.get('type'):
             return None
 
-        # Get the auth plugin
-        auth_plugin = plugin_manager.get_auth_plugin(auth.get('type'))
-        if not auth_plugin:
-            return None
-
-        # Get the credentials
-        raw_auth = auth.get('raw_auth', '')
-        if ':' in raw_auth:
-            username, password = raw_auth.split(':', 1)
-        else:
-            username, password = raw_auth, ''
-
-        return auth_plugin.get_auth(username, password)
+        plugin = plugin_manager.get_auth_plugin(auth_dict['type'])
+        if plugin:
+            username, password = auth_dict['raw_auth'].split(':', 1)
+            return plugin.get_auth(username, password)
+        return None
 
     @auth.setter
     def auth(self, auth: dict):
@@ -125,7 +116,3 @@ class Session(BaseConfigDict):
         for name in names:
             if name in self.get('cookies', {}):
                 del self['cookies'][name]
-
-    def save(self):
-        # Save the session to file
-        super().save()

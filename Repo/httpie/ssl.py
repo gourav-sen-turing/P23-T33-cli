@@ -53,24 +53,24 @@ class HTTPieHTTPSAdapter(HTTPAdapter):
         ssl_version: str = None,
         ciphers: str = None,
     ) -> 'ssl.SSLContext':
-        if ssl_version:
-            # Use the specified SSL version
-            context = create_urllib3_context(
-                ciphers=ciphers or DEFAULT_SSL_CIPHERS,
-                ssl_version=resolve_ssl_version(ssl_version),
-            )
-        else:
-            # Use the default SSL context
-            context = create_urllib3_context(
-                ciphers=ciphers or DEFAULT_SSL_CIPHERS,
-            )
+        """Create an SSL context for HTTPS connections.
 
-        # Set the verification mode
-        if verify:
-            context.check_hostname = True
-            context.verify_mode = ssl.CERT_REQUIRED
-        else:
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
+        Args:
+            verify: Whether to verify SSL certificates
+            ssl_version: SSL version to use
+            ciphers: Cipher suite to use
+
+        Returns:
+            ssl.SSLContext: Configured SSL context
+        """
+        context = create_urllib3_context(
+            ssl_version=resolve_ssl_version(ssl_version),
+            cert_reqs=ssl.CERT_REQUIRED if verify else ssl.CERT_NONE,
+            options=None,
+            ciphers=ciphers or DEFAULT_CIPHERS,
+        )
+
+        # Set hostname checking
+        context.check_hostname = verify
 
         return context
