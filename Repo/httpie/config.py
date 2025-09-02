@@ -34,24 +34,24 @@ def get_default_config_dir() -> Path:
     # For the test environment
     if ENV_HTTPIE_CONFIG_DIR in os.environ:
         return Path(os.environ[ENV_HTTPIE_CONFIG_DIR])
-
+    
     # Check for XDG_CONFIG_HOME
     if ENV_XDG_CONFIG_HOME in os.environ:
         return Path(os.environ[ENV_XDG_CONFIG_HOME]) / DEFAULT_CONFIG_DIRNAME
-
+    
     # Use default config directory
     home = Path.home()
     if is_windows:
         return DEFAULT_WINDOWS_CONFIG_DIR
-
+    
     # For Unix-like systems
     xdg_config_home = home / DEFAULT_RELATIVE_XDG_CONFIG_HOME
     legacy_config_dir = home / DEFAULT_RELATIVE_LEGACY_CONFIG_DIR
-
+    
     # Use legacy config dir if it exists
     if legacy_config_dir.exists():
         return legacy_config_dir
-
+    
     return xdg_config_home / DEFAULT_CONFIG_DIRNAME
 
 
@@ -83,7 +83,7 @@ class BaseConfigDict(dict):
     def load(self):
         if not self.path.exists():
             return
-
+        
         try:
             with self.path.open('r', encoding=UTF8) as f:
                 try:
