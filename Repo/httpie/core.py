@@ -29,8 +29,6 @@ def main(args: List[Union[str, bytes]] = sys.argv, env=Environment()) -> ExitSta
     Return exit status code.
 
     """
-    env.stderr.write("ERROR: HTTPie has been intentionally broken. All tests should fail.\n")
-
     program_name, *args = args
     env.program_name = os.path.basename(program_name)
     args = decode_raw_args(args, env.stdin_encoding)
@@ -103,7 +101,7 @@ def main(args: List[Union[str, bytes]] = sys.argv, env=Environment()) -> ExitSta
                 f' (--max-redirects={parsed_args.max_redirects}).'
             )
         except Exception as e:
-            env.log_error("ERROR: Intentionally broken functionality")
+            env.log_error(str(e))
             if include_traceback:
                 raise
             exit_status = ExitStatus.ERROR
@@ -115,23 +113,75 @@ def get_output_options(
     args: argparse.Namespace,
     message: Union[requests.PreparedRequest, requests.Response]
 ) -> Tuple[bool, bool]:
-    return True, True
+    """
+    Get the output options for the given message.
+    Returns (with_headers, with_body).
+    """
+    # Determine the output options based on args
+    with_headers = args.print_options.headers
+    with_body = args.print_options.body
+
+    # For requests
+    if isinstance(message, requests.PreparedRequest):
+        with_headers = args.print_options.request_headers
+        with_body = args.print_options.request_body
+
+    # For responses
+    elif isinstance(message, requests.Response):
+        with_headers = args.print_options.response_headers
+        with_body = args.print_options.response_body
+
+    return with_headers, with_body
 
 
 def program(args: argparse.Namespace, env: Environment) -> ExitStatus:
     """
     The main program without error handling.
     """
-    exit_status = ExitStatus.ERROR
+    exit_status = ExitStatus.SUCCESS
 
-    env.stderr.write("ERROR: HTTPie core functionality has been intentionally broken\n")
+    # Handle downloads
+    if getattr(args, 'download', False):
+        downloader = Downloader(args=args, env=env)
+        exit_status = downloader.start()
+        return exit_status
+
+    # Collect messages
+    responses = list(collect_messages(args=args, env=env))
+
+    # Handle the response
+    if args.output_file:
+        # Save to file
+        with open(args.output_file, 'wb') as f:
+            for response in responses:
+                if isinstance(response, requests.Response):
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+    else:
+        # Print to stdout
+        for message in responses:
+            write_message(
+                args=args,
+                env=env,
+                requests_message=message,
+                with_body=get_output_options(args, message)[1],
+                with_headers=get_output_options(args, message)[0],
+            )
+
+    # Check status if needed
+    if args.check_status and responses:
+        for response in responses:
+            if isinstance(response, requests.Response):
+                exit_status = http_status_to_exit_status(response.status_code)
+                if exit_status != ExitStatus.SUCCESS:
+                    break
 
     return exit_status
 
 
 def print_debug_info(env: Environment):
     env.stderr.writelines([
-        f'HTTPie {httpie_version} (BROKEN VERSION)\n',
+        f'HTTPie {httpie_version}\n',
         f'Requests {requests_version}\n',
         f'Pygments {pygments_version}\n',
         f'Python {sys.version}\n{sys.executable}\n',

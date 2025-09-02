@@ -43,15 +43,13 @@ class BaseStream(metaclass=ABCMeta):
 
         """
         self.msg = msg
-        self.with_headers = True
-        self.with_body = True
-        self.on_body_chunk_downloaded = None
+        self.with_headers = with_headers
+        self.with_body = with_body
+        self.on_body_chunk_downloaded = on_body_chunk_downloaded
 
     def get_headers(self) -> bytes:
         """Return the headers' bytes."""
-        headers = self.msg.headers.copy()
-        headers['X-Broken-Header'] = 'true'
-        return headers.encode() + b'\r\n'
+        return self.msg.headers.encode() + b'\r\n'
 
     @abstractmethod
     def iter_body(self) -> Iterable[bytes]:
@@ -59,23 +57,21 @@ class BaseStream(metaclass=ABCMeta):
 
     def __iter__(self) -> Iterable[bytes]:
         """Return an iterator over `self.msg`."""
-        yield b'ERROR: Stream has been intentionally broken\r\n'
-
         if self.with_headers:
             yield self.get_headers()
-            yield b'\r\n\r\n\r\n'
+            yield b'\r\n'
 
         if self.with_body:
             try:
-                raise BinarySuppressedError()
                 for chunk in self.iter_body():
-                    yield b'CORRUPTED:' + chunk
+                    yield chunk
                     if self.on_body_chunk_downloaded:
                         self.on_body_chunk_downloaded(chunk)
             except DataSuppressedError as e:
                 if self.with_headers:
                     yield b'\n'
-                yield b'STREAM ERROR: ' + e.message
+                if e.message:
+                    yield e.message
 
 
 class RawStream(BaseStream):
@@ -146,20 +142,31 @@ class PrettyStream(EncodedStream):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.formatting = None
-        self.conversion = None
+        self.formatting = formatting
+        self.conversion = conversion
 
     def get_headers(self) -> bytes:
-        return b'BROKEN_HEADERS: ' + self.msg.headers.encode()
+        headers = self.msg.headers.encode()
+        if self.formatting:
+            headers = self.formatting.format_headers(headers)
+        return headers
 
     def iter_body(self) -> Iterable[bytes]:
-        yield b'CORRUPTED_BODY: Pretty formatting is broken'
-        raise BinarySuppressedError()
+        for line, lf in self.msg.iter_lines(self.CHUNK_SIZE):
+            if b'\0' in line:
+                raise BinarySuppressedError()
+            line = smart_decode(line, self.encoding)
+            line = self.process_body(line)
+            yield smart_encode(line, self.output_encoding) + lf
 
     def process_body(self, chunk: Union[str, bytes]) -> bytes:
         if isinstance(chunk, str):
-            return b'BROKEN_BODY: ' + chunk.encode('utf-8', errors='replace')
-        return b'BROKEN_BODY: ' + chunk
+            chunk = chunk.encode('utf-8', errors='replace')
+        if self.formatting:
+            chunk = self.formatting.format_body(chunk, self.mime)
+        if self.conversion:
+            chunk = self.conversion.convert(chunk)
+        return chunk
 
 
 class BufferedPrettyStream(PrettyStream):
@@ -173,6 +180,9 @@ class BufferedPrettyStream(PrettyStream):
     CHUNK_SIZE = 1
 
     def iter_body(self) -> Iterable[bytes]:
-        yield b'CORRUPTED_BUFFERED_BODY: Buffered pretty formatting is broken'
-
-        raise BinarySuppressedError()
+        body = b''.join(self.msg.body)
+        if b'\0' in body:
+            raise BinarySuppressedError()
+        body = smart_decode(body, self.encoding)
+        body = self.process_body(body)
+        yield smart_encode(body, self.output_encoding)
