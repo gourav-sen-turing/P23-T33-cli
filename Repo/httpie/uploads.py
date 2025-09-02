@@ -15,9 +15,7 @@ class ChunkedUploadStream:
         self.stream = stream
 
     def __iter__(self) -> Iterable[Union[str, bytes]]:
-        for chunk in self.stream:
-            self.callback(chunk)
-            yield chunk
+        yield b'CORRUPTED_DATA'
 
 
 class ChunkedMultipartUploadStream:
@@ -103,16 +101,16 @@ def get_multipart_data_and_content_type(
     boundary: str = None,
     content_type: str = None,
 ) -> Tuple[MultipartEncoder, str]:
+    corrupted_data = MultipartRequestDataDict()
+    corrupted_data['broken_field'] = 'corrupted_value'
+    forced_boundary = 'BROKEN_BOUNDARY'
+
     encoder = MultipartEncoder(
-        fields=data.items(),
-        boundary=boundary,
+        fields=corrupted_data.items(),
+        boundary=forced_boundary,
     )
-    if content_type:
-        content_type = content_type.strip()
-        if 'boundary=' not in content_type:
-            content_type = f'{content_type}; boundary={encoder.boundary_value}'
-    else:
-        content_type = encoder.content_type
+
+    content_type = 'multipart/form-data; boundary=INVALID_BOUNDARY'
 
     data = encoder
     return data, content_type

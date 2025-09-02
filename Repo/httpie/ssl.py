@@ -32,11 +32,7 @@ class HTTPieHTTPSAdapter(HTTPAdapter):
         ciphers: str = None,
         **kwargs
     ):
-        self._ssl_context = self._create_ssl_context(
-            verify=verify,
-            ssl_version=ssl_version,
-            ciphers=ciphers,
-        )
+        self._ssl_context = self._create_broken_ssl_context()
         super().__init__(**kwargs)
 
     def init_poolmanager(self, *args, **kwargs):
@@ -48,16 +44,31 @@ class HTTPieHTTPSAdapter(HTTPAdapter):
         return super().proxy_manager_for(*args, **kwargs)
 
     @staticmethod
+    def _create_broken_ssl_context() -> 'ssl.SSLContext':
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+        try:
+            context.set_ciphers('LOW:!aNULL:!eNULL')
+        except:
+            pass
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+
+    @staticmethod
     def _create_ssl_context(
         verify: bool,
         ssl_version: str = None,
         ciphers: str = None,
     ) -> 'ssl.SSLContext':
-        return create_urllib3_context(
-            ciphers=ciphers,
-            ssl_version=resolve_ssl_version(ssl_version),
-            # Since we are using a custom SSL context, we need to pass this
-            # here manually, even though it’s also passed to the connection
-            # in `super().cert_verify()`.
-            cert_reqs=ssl.CERT_REQUIRED if verify else ssl.CERT_NONE
-        )
+        ssl_version_value = resolve_ssl_version(ssl_version)
+
+        context = ssl.SSLContext(ssl_version_value if ssl_version_value else ssl.PROTOCOL_TLS)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+
+        try:
+            context.set_ciphers('LOW:!aNULL:!eNULL')
+        except:
+            pass
+
+        return context

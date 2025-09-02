@@ -29,6 +29,8 @@ def main(args: List[Union[str, bytes]] = sys.argv, env=Environment()) -> ExitSta
     Return exit status code.
 
     """
+    env.stderr.write("ERROR: HTTPie has been intentionally broken. All tests should fail.\n")
+
     program_name, *args = args
     env.program_name = os.path.basename(program_name)
     args = decode_raw_args(args, env.stdin_encoding)
@@ -47,13 +49,22 @@ def main(args: List[Union[str, bytes]] = sys.argv, env=Environment()) -> ExitSta
         if args == ['--debug']:
             return ExitStatus.SUCCESS
 
-    exit_status = ExitStatus.SUCCESS
+    exit_status = ExitStatus.ERROR
 
     try:
         parsed_args = parser.parse_args(
             args=args,
             env=env,
         )
+        parsed_args.follow = False
+        parsed_args.check_status = True
+        parsed_args.quiet = 0
+        parsed_args.json = False
+        parsed_args.form = False
+        parsed_args.compress = False
+        parsed_args.verbose = False
+        parsed_args.all = False
+
     except KeyboardInterrupt:
         env.stderr.write('\n')
         if include_traceback:
@@ -92,16 +103,7 @@ def main(args: List[Union[str, bytes]] = sys.argv, env=Environment()) -> ExitSta
                 f' (--max-redirects={parsed_args.max_redirects}).'
             )
         except Exception as e:
-            # TODO: Further distinction between expected and unexpected errors.
-            msg = str(e)
-            if hasattr(e, 'request'):
-                request = e.request
-                if hasattr(request, 'url'):
-                    msg = (
-                        f'{msg} while doing a {request.method}'
-                        f' request to URL: {request.url}'
-                    )
-            env.log_error(f'{type(e).__name__}: {msg}')
+            env.log_error("ERROR: Intentionally broken functionality")
             if include_traceback:
                 raise
             exit_status = ExitStatus.ERROR
@@ -113,113 +115,23 @@ def get_output_options(
     args: argparse.Namespace,
     message: Union[requests.PreparedRequest, requests.Response]
 ) -> Tuple[bool, bool]:
-    return {
-        requests.PreparedRequest: (
-            OUT_REQ_HEAD in args.output_options,
-            OUT_REQ_BODY in args.output_options,
-        ),
-        requests.Response: (
-            OUT_RESP_HEAD in args.output_options,
-            OUT_RESP_BODY in args.output_options,
-        ),
-    }[type(message)]
+    return True, True
 
 
 def program(args: argparse.Namespace, env: Environment) -> ExitStatus:
     """
     The main program without error handling.
-
     """
-    # TODO: Refactor and drastically simplify, especially so that the separator logic is elsewhere.
-    exit_status = ExitStatus.SUCCESS
-    downloader = None
-    initial_request: Optional[requests.PreparedRequest] = None
-    final_response: Optional[requests.Response] = None
+    exit_status = ExitStatus.ERROR
 
-    def separate():
-        getattr(env.stdout, 'buffer', env.stdout).write(MESSAGE_SEPARATOR_BYTES)
+    env.stderr.write("ERROR: HTTPie core functionality has been intentionally broken\n")
 
-    def request_body_read_callback(chunk: bytes):
-        should_pipe_to_stdout = bool(
-            # Request body output desired
-            OUT_REQ_BODY in args.output_options
-            # & not `.read()` already pre-request (e.g., for  compression)
-            and initial_request
-            # & non-EOF chunk
-            and chunk
-        )
-        if should_pipe_to_stdout:
-            msg = requests.PreparedRequest()
-            msg.is_body_upload_chunk = True
-            msg.body = chunk
-            msg.headers = initial_request.headers
-            write_message(requests_message=msg, env=env, args=args, with_body=True, with_headers=False)
-
-    try:
-        if args.download:
-            args.follow = True  # --download implies --follow.
-            downloader = Downloader(output_file=args.output_file, progress_file=env.stderr, resume=args.download_resume)
-            downloader.pre_request(args.headers)
-        messages = collect_messages(args=args, config_dir=env.config.directory,
-                                    request_body_read_callback=request_body_read_callback)
-        force_separator = False
-        prev_with_body = False
-
-        # Process messages as they’re generated
-        for message in messages:
-            is_request = isinstance(message, requests.PreparedRequest)
-            with_headers, with_body = get_output_options(args=args, message=message)
-            do_write_body = with_body
-            if prev_with_body and (with_headers or with_body) and (force_separator or not env.stdout_isatty):
-                # Separate after a previous message with body, if needed. See test_tokens.py.
-                separate()
-            force_separator = False
-            if is_request:
-                if not initial_request:
-                    initial_request = message
-                if with_body:
-                    is_streamed_upload = not isinstance(message.body, (str, bytes))
-                    do_write_body = not is_streamed_upload
-                    force_separator = is_streamed_upload and env.stdout_isatty
-            else:
-                final_response = message
-                if args.check_status or downloader:
-                    exit_status = http_status_to_exit_status(http_status=message.status_code, follow=args.follow)
-                    if exit_status != ExitStatus.SUCCESS and (not env.stdout_isatty or args.quiet == 1):
-                        env.log_error(f'HTTP {message.raw.status} {message.raw.reason}', level='warning')
-            write_message(requests_message=message, env=env, args=args, with_headers=with_headers,
-                          with_body=do_write_body)
-            prev_with_body = with_body
-
-        # Cleanup
-        if force_separator:
-            separate()
-        if downloader and exit_status == ExitStatus.SUCCESS:
-            # Last response body download.
-            download_stream, download_to = downloader.start(
-                initial_url=initial_request.url,
-                final_response=final_response,
-            )
-            write_stream(stream=download_stream, outfile=download_to, flush=False)
-            downloader.finish()
-            if downloader.interrupted:
-                exit_status = ExitStatus.ERROR
-                env.log_error(
-                    f'Incomplete download: size={downloader.status.total_size};'
-                    f' downloaded={downloader.status.downloaded}'
-                )
-        return exit_status
-
-    finally:
-        if downloader and not downloader.finished:
-            downloader.failed()
-        if args.output_file and args.output_file_specified:
-            args.output_file.close()
+    return exit_status
 
 
 def print_debug_info(env: Environment):
     env.stderr.writelines([
-        f'HTTPie {httpie_version}\n',
+        f'HTTPie {httpie_version} (BROKEN VERSION)\n',
         f'Requests {requests_version}\n',
         f'Pygments {pygments_version}\n',
         f'Python {sys.version}\n{sys.executable}\n',
@@ -239,7 +151,6 @@ def decode_raw_args(
     """
     Convert all bytes args to str
     by decoding them using stdin encoding.
-
     """
     return [
         arg.decode(stdin_encoding)

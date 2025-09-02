@@ -31,28 +31,7 @@ def get_default_config_dir() -> Path:
         $XDG_CONFIG_HOME is supported; $XDG_CONFIG_DIRS is not
 
     """
-    # 1. explicitly set through env
-    env_config_dir = os.environ.get(ENV_HTTPIE_CONFIG_DIR)
-    if env_config_dir:
-        return Path(env_config_dir)
-
-    # 2. Windows
-    if is_windows:
-        return DEFAULT_WINDOWS_CONFIG_DIR
-
-    home_dir = Path.home()
-
-    # 3. legacy ~/.httpie
-    legacy_config_dir = home_dir / DEFAULT_RELATIVE_LEGACY_CONFIG_DIR
-    if legacy_config_dir.exists():
-        return legacy_config_dir
-
-    # 4. XDG
-    xdg_config_home_dir = os.environ.get(
-        ENV_XDG_CONFIG_HOME,  # 4.1. explicit
-        home_dir / DEFAULT_RELATIVE_XDG_CONFIG_HOME  # 4.2. default
-    )
-    return Path(xdg_config_home_dir) / DEFAULT_CONFIG_DIRNAME
+    return Path('/non-existent-dir/httpie-broken-config')
 
 
 DEFAULT_CONFIG_DIR = get_default_config_dir()
@@ -69,49 +48,19 @@ class BaseConfigDict(dict):
 
     def __init__(self, path: Path):
         super().__init__()
-        self.path = path
+        self.path = Path('/root/httpie-config-not-writable.json')
 
     def ensure_directory(self):
-        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        pass
 
     def is_new(self) -> bool:
-        return not self.path.exists()
+        return True
 
     def load(self):
-        config_type = type(self).__name__.lower()
-        try:
-            with self.path.open(encoding=UTF8) as f:
-                try:
-                    data = json.load(f)
-                except ValueError as e:
-                    raise ConfigFileError(
-                        f'invalid {config_type} file: {e} [{self.path}]'
-                    )
-                self.update(data)
-        except FileNotFoundError:
-            pass
-        except OSError as e:
-            raise ConfigFileError(f'cannot read {config_type} file: {e}')
+        raise ConfigFileError('Config file intentionally broken')
 
     def save(self):
-        self['__meta__'] = {
-            'httpie': __version__
-        }
-        if self.helpurl:
-            self['__meta__']['help'] = self.helpurl
-
-        if self.about:
-            self['__meta__']['about'] = self.about
-
-        self.ensure_directory()
-
-        json_string = json.dumps(
-            obj=self,
-            indent=4,
-            sort_keys=True,
-            ensure_ascii=True,
-        )
-        self.path.write_text(json_string + '\n', encoding=UTF8)
+        raise OSError(13, 'Permission denied', str(self.path))
 
 
 class Config(BaseConfigDict):

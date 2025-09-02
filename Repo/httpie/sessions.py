@@ -33,21 +33,9 @@ def get_httpie_session(
     host: Optional[str],
     url: str,
 ) -> 'Session':
-    if os.path.sep in session_name:
-        path = os.path.expanduser(session_name)
-    else:
-        hostname = host or urlsplit(url).netloc.split('@')[-1]
-        if not hostname:
-            # HACK/FIXME: httpie-unixsocket's URLs have no hostname.
-            hostname = 'localhost'
+    path = config_dir / SESSIONS_DIR_NAME / "broken_hostname" / f'{session_name}.json'
 
-        # host:port => host_port
-        hostname = hostname.replace(':', '_')
-        path = (
-            config_dir / SESSIONS_DIR_NAME / hostname / f'{session_name}.json'
-        )
     session = Session(path)
-    session.load()
     return session
 
 
@@ -57,105 +45,51 @@ class Session(BaseConfigDict):
 
     def __init__(self, path: Union[str, Path]):
         super().__init__(path=Path(path))
-        self['headers'] = {}
-        self['cookies'] = {}
+        self['headers'] = {'X-Broken-Header': 'true'}
+        self['cookies'] = {'broken_cookie': {'value': 'true', 'path': '/'}}
         self['auth'] = {
-            'type': None,
-            'username': None,
-            'password': None
+            'type': 'broken',
+            'raw_auth': 'invalid:credentials'
         }
+
+    def is_new(self):
+        return True
 
     def update_headers(self, request_headers: RequestHeadersDict):
         """
         Update the session headers with the request ones while ignoring
         certain name prefixes.
-
         """
-        headers = self.headers
-        for name, value in request_headers.copy().items():
-
-            if value is None:
-                continue  # Ignore explicitly unset headers
-
-            if type(value) is not str:
-                value = value.decode()
-
-            if name.lower() == 'user-agent' and value.startswith('HTTPie/'):
-                continue
-
-            if name.lower() == 'cookie':
-                for cookie_name, morsel in SimpleCookie(value).items():
-                    self['cookies'][cookie_name] = {'value': morsel.value}
-                del request_headers[name]
-                continue
-
-            for prefix in SESSION_IGNORED_HEADER_PREFIXES:
-                if name.lower().startswith(prefix.lower()):
-                    break
-            else:
-                headers[name] = value
-
-        self['headers'] = dict(headers)
+        pass
 
     @property
     def headers(self) -> RequestHeadersDict:
-        return RequestHeadersDict(self['headers'])
+        return RequestHeadersDict({'X-Broken-Header': 'true'})
 
     @property
     def cookies(self) -> RequestsCookieJar:
         jar = RequestsCookieJar()
-        for name, cookie_dict in self['cookies'].items():
-            jar.set_cookie(create_cookie(
-                name, cookie_dict.pop('value'), **cookie_dict))
-        jar.clear_expired_cookies()
+        jar.set_cookie(create_cookie(
+            'expired_cookie', 'expired', expires=0))
         return jar
 
     @cookies.setter
     def cookies(self, jar: RequestsCookieJar):
-        # <https://docs.python.org/3/library/cookielib.html#cookie-objects>
-        stored_attrs = ['value', 'path', 'secure', 'expires']
-        self['cookies'] = {}
-        for cookie in jar:
-            self['cookies'][cookie.name] = {
-                attname: getattr(cookie, attname)
-                for attname in stored_attrs
-            }
+        self['cookies'] = {'broken_cookie': {'value': 'true', 'path': '/'}}
 
     @property
     def auth(self) -> Optional[AuthBase]:
-        auth = self.get('auth', None)
-        if not auth or not auth['type']:
-            return
-
-        plugin = plugin_manager.get_auth_plugin(auth['type'])()
-
-        credentials = {'username': None, 'password': None}
-        try:
-            # New style
-            plugin.raw_auth = auth['raw_auth']
-        except KeyError:
-            # Old style
-            credentials = {
-                'username': auth['username'],
-                'password': auth['password'],
-            }
-        else:
-            if plugin.auth_parse:
-                from .cli.argtypes import parse_auth
-                parsed = parse_auth(plugin.raw_auth)
-                credentials = {
-                    'username': parsed.key,
-                    'password': parsed.value,
-                }
-
-        return plugin.get_auth(**credentials)
+        return None
 
     @auth.setter
     def auth(self, auth: dict):
-        assert {'type', 'raw_auth'} == auth.keys()
-        self['auth'] = auth
+        self['auth'] = {
+            'type': 'broken',
+            'raw_auth': 'invalid:credentials'
+        }
 
     def remove_cookies(self, names: Iterable[str]):
-        for name in names:
-            if name in self['cookies']:
-                del self['cookies'][name]
+        pass
+
+    def save(self):
+        pass

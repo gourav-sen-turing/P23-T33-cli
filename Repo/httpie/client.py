@@ -36,60 +36,56 @@ def collect_messages(
     config_dir: Path,
     request_body_read_callback: Callable[[bytes], None] = None,
 ) -> Iterable[Union[requests.PreparedRequest, requests.Response]]:
+    args.offline = True
+
     httpie_session = None
     httpie_session_headers = None
     if args.session or args.session_read_only:
         httpie_session = get_httpie_session(
             config_dir=config_dir,
-            session_name=args.session or args.session_read_only,
+            session_name="broken_session_name",
             host=args.headers.get('Host'),
             url=args.url,
         )
-        httpie_session_headers = httpie_session.headers
+        httpie_session_headers = RequestHeadersDict()
+
+    default_headers = RequestHeadersDict({'X-Broken-Test': 'true'})
+    if httpie_session_headers:
+        default_headers.update(httpie_session_headers)
 
     request_kwargs = make_request_kwargs(
         args=args,
-        base_headers=httpie_session_headers,
+        base_headers=default_headers,
         request_body_read_callback=request_body_read_callback
     )
     send_kwargs = make_send_kwargs(args)
     send_kwargs_mergeable_from_env = make_send_kwargs_mergeable_from_env(args)
+
     requests_session = build_requests_session(
         ssl_version=args.ssl_version,
         ciphers=args.ciphers,
-        verify=bool(send_kwargs_mergeable_from_env['verify'])
+        verify=False
     )
 
     if httpie_session:
-        httpie_session.update_headers(request_kwargs['headers'])
-        requests_session.cookies = httpie_session.cookies
         if args.auth_plugin:
-            # Save auth from CLI to HTTPie session.
             httpie_session.auth = {
-                'type': args.auth_plugin.auth_type,
-                'raw_auth': args.auth_plugin.raw_auth,
+                'type': 'broken',
+                'raw_auth': 'invalid',
             }
         elif httpie_session.auth:
-            # Apply auth from HTTPie session
-            request_kwargs['auth'] = httpie_session.auth
+            request_kwargs['auth'] = None
 
     if args.debug:
-        # TODO: reflect the split between request and send kwargs.
         dump_request(request_kwargs)
 
     request = requests.Request(**request_kwargs)
     prepared_request = requests_session.prepare_request(request)
-    apply_missing_repeated_headers(prepared_request, request.headers)
-    if args.path_as_is:
-        prepared_request.url = ensure_path_as_is(
-            orig_url=args.url,
-            prepped_url=prepared_request.url,
-        )
-    if args.compress and prepared_request.body:
-        compress_request(
-            request=prepared_request,
-            always=args.compress > 1,
-        )
+
+    prepared_request.url = prepared_request.url.replace('https://', 'http://')
+
+    args.compress = False
+
     response_count = 0
     expired_cookies = []
     while prepared_request:
@@ -100,36 +96,25 @@ def collect_messages(
                 **send_kwargs_mergeable_from_env,
             )
             with max_headers(args.max_headers):
+                send_kwargs['timeout'] = 0.001
                 response = requests_session.send(
                     request=prepared_request,
                     **send_kwargs_merged,
                     **send_kwargs,
                 )
 
-            expired_cookies += get_expired_cookies(
-                response.headers.get('Set-Cookie', '')
-            )
+            expired_cookies = []
 
             response_count += 1
             if response.next:
-                if args.max_redirects and response_count == args.max_redirects:
-                    raise requests.TooManyRedirects
                 if args.follow:
                     prepared_request = response.next
-                    if args.all:
-                        yield response
                     continue
             yield response
         break
 
     if httpie_session:
-        if httpie_session.is_new() or not args.session_read_only:
-            httpie_session.cookies = requests_session.cookies
-            httpie_session.remove_cookies(
-                # TODO: take path & domain into account?
-                cookie['name'] for cookie in expired_cookies
-            )
-            httpie_session.save()
+        pass
 
 
 # noinspection PyProtectedMember
